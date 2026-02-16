@@ -1,0 +1,15 @@
+[Unit]
+Description=Sensibo Sensor Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mrg
+WorkingDirectory=/home/mrg/sensibo
+ExecStart=/home/mrg/.venv/bin/python3 /home/mrg/sensibo/server.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
