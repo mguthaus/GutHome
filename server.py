@@ -3,6 +3,8 @@ import threading
 from flask import Flask, render_template_string
 import config
 from collector import init_db, run_collector
+from govee_collector import init_govee_db, run_govee_collector
+from weather_collector import init_weather_db, run_weather_collector
 
 app = Flask(__name__)
 
@@ -106,7 +108,7 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-    <h1>Sensibo Sensor Dashboard</h1>
+    <h1>Sensor Dashboard</h1>
     <div class="subtitle" id="lastUpdate"></div>
 
     <div class="current-values" id="currentValues"></div>
@@ -131,16 +133,20 @@ HTML_TEMPLATE = """
         <div class="checkboxes" id="chart2Checks">
             <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="co2"> CO₂</label>
             <label><input type="checkbox" onchange="fetchAndPlot()" data-field="tvoc"> TVOC</label>
-            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="iaq"> IAQ</label>
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="iaq"> AQI/IAQ</label>
         </div>
         <div class="chart" id="chart2" style="height:450px"></div>
     </div>
 
     <script>
-        const COLORS = {
+        const ROOM_COLORS = {
             'Living Room': '#e94560',
             'Den': '#0f9b58',
-            'Bedroom': '#4285f4'
+            'Bedroom': '#4285f4',
+            'Living Room (Govee)': '#ff6b81',
+            'Bedroom (Govee)': '#a29bfe',
+            'Den (Govee)': '#55efc4',
+            'Outside': '#ffd93d'
         };
         let currentRange = '24h';
 
@@ -156,13 +162,17 @@ HTML_TEMPLATE = """
             humidity:    { label: 'Humidity', unit: '%', color: '#f5a623' },
             co2:         { label: 'CO₂', unit: 'ppm', color: '#e94560' },
             tvoc:        { label: 'TVOC', unit: 'ppb', color: '#0f9b58' },
-            iaq:         { label: 'IAQ', unit: '', color: '#4285f4' }
+            iaq:         { label: 'AQI/IAQ', unit: '', color: '#4285f4' }
         };
 
         const ROOM_STYLES = {
             'Living Room': 'solid',
             'Den': 'dash',
-            'Bedroom': 'dot'
+            'Bedroom': 'dot',
+            'Living Room (Govee)': 'solid',
+            'Bedroom (Govee)': 'dashdot',
+            'Den (Govee)': 'dash',
+            'Outside': 'longdash'
         };
 
         function getCheckedFields(containerId) {
@@ -255,15 +265,17 @@ HTML_TEMPLATE = """
                 if (readings.length === 0) continue;
                 let latest = readings[readings.length - 1];
                 latestTime = new Date(latest.timestamp).toLocaleString();
-                let color = COLORS[room] || '#fff';
+                let color = ROOM_COLORS[room] || '#fff';
+                let metrics = `
+                        <div class="metric"><span>Temp</span><span class="value">${latest.temperature?.toFixed(1) ?? '—'}°F</span></div>
+                        <div class="metric"><span>Humidity</span><span class="value">${latest.humidity?.toFixed(0) ?? '—'}%</span></div>`;
+                if (latest.co2 != null) metrics += `<div class="metric"><span>CO₂</span><span class="value">${latest.co2} ppm</span></div>`;
+                if (latest.tvoc != null) metrics += `<div class="metric"><span>TVOC</span><span class="value">${latest.tvoc} ppb</span></div>`;
+                if (latest.iaq != null) metrics += `<div class="metric"><span>AQI/IAQ</span><span class="value">${latest.iaq}</span></div>`;
                 html += `
                     <div class="device-card" style="border-top: 3px solid ${color}">
                         <h3>${room}</h3>
-                        <div class="metric"><span>Temp</span><span class="value">${latest.temperature?.toFixed(1) ?? '—'}°F</span></div>
-                        <div class="metric"><span>Humidity</span><span class="value">${latest.humidity?.toFixed(0) ?? '—'}%</span></div>
-                        <div class="metric"><span>CO₂</span><span class="value">${latest.co2 ?? '—'} ppm</span></div>
-                        <div class="metric"><span>TVOC</span><span class="value">${latest.tvoc ?? '—'} ppb</span></div>
-                        <div class="metric"><span>IAQ</span><span class="value">${latest.iaq ?? '—'}</span></div>
+                        ${metrics}
                     </div>
                 `;
             }
@@ -308,9 +320,23 @@ def api_data():
             "SELECT * FROM readings WHERE timestamp >= ? ORDER BY timestamp",
             (since,),
         ).fetchall()
+        govee_rows = conn.execute(
+            "SELECT * FROM govee_readings WHERE timestamp >= ? ORDER BY timestamp",
+            (since,),
+        ).fetchall()
+        weather_rows = conn.execute(
+            "SELECT * FROM weather_readings WHERE timestamp >= ? ORDER BY timestamp",
+            (since,),
+        ).fetchall()
     else:
         rows = conn.execute(
             "SELECT * FROM readings ORDER BY timestamp"
+        ).fetchall()
+        govee_rows = conn.execute(
+            "SELECT * FROM govee_readings ORDER BY timestamp"
+        ).fetchall()
+        weather_rows = conn.execute(
+            "SELECT * FROM weather_readings ORDER BY timestamp"
         ).fetchall()
 
     conn.close()
@@ -333,13 +359,50 @@ def api_data():
             }
         )
 
+    for row in govee_rows:
+        room = row["room_name"]
+        if room not in result:
+            result[room] = []
+        temp_c = row["temperature"]
+        temp_f = round(temp_c * 9 / 5 + 32, 1) if temp_c is not None else None
+        result[room].append(
+            {
+                "timestamp": row["timestamp"],
+                "temperature": temp_f,
+                "humidity": row["humidity"],
+                "co2": None,
+                "tvoc": None,
+                "iaq": None,
+            }
+        )
+
+    for row in weather_rows:
+        if "Outside" not in result:
+            result["Outside"] = []
+        result["Outside"].append(
+            {
+                "timestamp": row["timestamp"],
+                "temperature": row["temperature"],
+                "humidity": row["humidity"],
+                "co2": None,
+                "tvoc": None,
+                "iaq": row["aqi"],
+            }
+        )
+
     return result
 
 
 def main():
     init_db()
+    init_govee_db()
+    init_weather_db()
     collector_thread = threading.Thread(target=run_collector, daemon=True)
     collector_thread.start()
+    govee_thread = threading.Thread(target=run_govee_collector, daemon=True)
+    govee_thread.start()
+    weather_thread = threading.Thread(target=run_weather_collector, daemon=True)
+    weather_thread.start()
     print(f"\nDashboard running at http://localhost:{config.WEB_PORT}")
     app.run(host=config.WEB_HOST, port=config.WEB_PORT)
 
