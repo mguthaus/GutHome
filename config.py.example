@@ -1,0 +1,5 @@
+API_KEY = "your-api-key-here"  # Get yours at https://home.sensibo.com/me/api
+POLL_INTERVAL_SECONDS = 300  # 5 minutes
+DB_PATH = "sensibo_data.db"
+WEB_HOST = "0.0.0.0"
+WEB_PORT = 8080
