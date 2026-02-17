@@ -502,7 +502,7 @@ HTML_TEMPLATE = """
                 let color = ROOM_COLORS[room] || '#fff';
                 let metrics = '';
                 for (let [source, vals] of Object.entries(sources)) {
-                    if (vals.timestamp) latestTime = new Date(vals.timestamp).toLocaleString();
+                    if (vals.timestamp) latestTime = new Date(vals.timestamp).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
                     let sourceLabel = vals.timestamp ? `${source} (${label})` : `${source} (No data)`;
                     metrics += `<div class="source-label">${sourceLabel}</div>`;
                     metrics += `<div class="metric"><span>Temp</span><span class="value">${fmtVal(vals.temperature, 1)}°F</span></div>`;
@@ -552,6 +552,22 @@ def index():
 def api_data():
     from flask import request
     import datetime
+    from zoneinfo import ZoneInfo
+
+    pacific = ZoneInfo("America/Los_Angeles")
+
+    def to_pacific(ts_str):
+        """Convert a UTC timestamp string to Pacific time ISO string."""
+        if not ts_str:
+            return ts_str
+        ts_str = ts_str.replace("Z", "+00:00")
+        try:
+            dt = datetime.datetime.fromisoformat(ts_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return dt.astimezone(pacific).isoformat()
+        except Exception:
+            return ts_str
 
     range_param = request.args.get("range", "24h")
     start_param = request.args.get("start")
@@ -620,7 +636,7 @@ def api_data():
         temp_f = round(temp_c * 9 / 5 + 32, 1) if temp_c is not None else None
         result[key].append(
             {
-                "timestamp": row["timestamp"],
+                "timestamp": to_pacific(row["timestamp"]),
                 "temperature": temp_f,
                 "humidity": row["humidity"],
                 "co2": row["co2"],
@@ -637,7 +653,7 @@ def api_data():
         temp_f = round(temp_c * 9 / 5 + 32, 1) if temp_c is not None else None
         result[key].append(
             {
-                "timestamp": row["timestamp"],
+                "timestamp": to_pacific(row["timestamp"]),
                 "temperature": temp_f,
                 "humidity": row["humidity"],
                 "co2": None,
@@ -652,7 +668,7 @@ def api_data():
             result[key] = []
         result[key].append(
             {
-                "timestamp": row["timestamp"],
+                "timestamp": to_pacific(row["timestamp"]),
                 "temperature": row["temperature"],
                 "humidity": row["humidity"],
                 "co2": None,
