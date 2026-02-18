@@ -5,6 +5,7 @@ import config
 from collector import init_db, run_collector
 from govee_collector import init_govee_db, run_govee_collector
 from weather_collector import init_weather_db, run_weather_collector
+from solar_collector import init_solar_db, run_solar_collector
 
 app = Flask(__name__)
 
@@ -204,18 +205,37 @@ HTML_TEMPLATE = """
         <div class="chart" id="chart4" style="height:450px"></div>
     </div>
 
+    <div class="chart-section">
+        <div class="checkboxes" id="chart5Checks">
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="production_w"> Production</label>
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="consumption_w"> Consumption</label>
+            <label><input type="checkbox" onchange="fetchAndPlot()" data-field="net_consumption_w"> Net</label>
+        </div>
+        <div class="chart" id="chart5" style="height:450px"></div>
+    </div>
+
+    <div class="chart-section">
+        <div class="checkboxes" id="chart6Checks">
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="production_wh_today"> Production Today</label>
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="consumption_wh_today"> Consumption Today</label>
+        </div>
+        <div class="chart" id="chart6" style="height:450px"></div>
+    </div>
+
     <script>
         const ROOM_COLORS = {
             'Outside': '#ffd93d',
             'Living Room': '#e94560',
             'Den': '#0f9b58',
-            'Bedroom': '#4285f4'
+            'Bedroom': '#4285f4',
+            'Solar': '#fdcb6e'
         };
 
         const SOURCE_STYLES = {
             'Sensibo': 'solid',
             'Govee': 'dash',
-            'Weather': 'solid'
+            'Weather': 'solid',
+            'Enphase': 'solid'
         };
 
         let currentRange = '24h';
@@ -282,7 +302,12 @@ HTML_TEMPLATE = """
             precip_total:{ label: 'Rain Total', unit: 'in', color: '#0984e3' },
             pressure:    { label: 'Pressure', unit: 'inHg', color: '#a29bfe' },
             uv:          { label: 'UV Index', unit: '', color: '#fdcb6e' },
-            solar_radiation: { label: 'Solar', unit: 'W/m²', color: '#e17055' }
+            solar_radiation: { label: 'Solar', unit: 'W/m²', color: '#e17055' },
+            production_w:    { label: 'Production', unit: 'W', color: '#fdcb6e' },
+            consumption_w:   { label: 'Consumption', unit: 'W', color: '#e94560' },
+            net_consumption_w: { label: 'Net', unit: 'W', color: '#00cec9' },
+            production_wh_today: { label: 'Prod Today', unit: 'kWh', color: '#fdcb6e' },
+            consumption_wh_today: { label: 'Cons Today', unit: 'kWh', color: '#e94560' }
         };
 
         function getCheckedFields(containerId) {
@@ -308,6 +333,8 @@ HTML_TEMPLATE = """
                     plotGeneric('chart2', data, getCheckedFields('chart2Checks'));
                     plotGeneric('chart3', data, getCheckedFields('chart3Checks'));
                     plotGeneric('chart4', data, getCheckedFields('chart4Checks'));
+                    plotGeneric('chart5', data, getCheckedFields('chart5Checks'));
+                    plotGeneric('chart6', data, getCheckedFields('chart6Checks'));
                     updateCurrentValues(data);
                 });
         }
@@ -490,8 +517,11 @@ HTML_TEMPLATE = """
 
             // Sort: Outside first, then alphabetical
             let roomOrder = Object.keys(rooms).sort((a, b) => {
-                if (a === 'Outside') return -1;
-                if (b === 'Outside') return 1;
+                let order = ['Outside', 'Solar'];
+                let ai = order.indexOf(a), bi = order.indexOf(b);
+                if (ai !== -1 && bi !== -1) return ai - bi;
+                if (ai !== -1) return -1;
+                if (bi !== -1) return -1;
                 return a.localeCompare(b);
             });
 
@@ -505,12 +535,21 @@ HTML_TEMPLATE = """
                     if (vals.timestamp) latestTime = new Date(vals.timestamp).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
                     let sourceLabel = vals.timestamp ? `${source} (${label})` : `${source} (No data)`;
                     metrics += `<div class="source-label">${sourceLabel}</div>`;
-                    metrics += `<div class="metric"><span>Temp</span><span class="value">${fmtVal(vals.temperature, 1)}°F</span></div>`;
-                    metrics += `<div class="metric"><span>Humidity</span><span class="value">${fmtVal(vals.humidity, 0)}%</span></div>`;
+                    if (source !== 'Enphase') {
+                        metrics += `<div class="metric"><span>Temp</span><span class="value">${fmtVal(vals.temperature, 1)}°F</span></div>`;
+                        metrics += `<div class="metric"><span>Humidity</span><span class="value">${fmtVal(vals.humidity, 0)}%</span></div>`;
+                    }
                     if (source === 'Sensibo') {
                         metrics += `<div class="metric"><span>CO₂</span><span class="value">${fmtVal(vals.co2, 0)} ppm</span></div>`;
                         metrics += `<div class="metric"><span>TVOC</span><span class="value">${fmtVal(vals.tvoc, 0)} ppb</span></div>`;
                         metrics += `<div class="metric"><span>AQI/IAQ</span><span class="value">${fmtVal(vals.iaq, 0)}</span></div>`;
+                    }
+                    if (source === 'Enphase') {
+                        metrics += `<div class="metric"><span>Production</span><span class="value">${fmtVal(vals.production_w, 0)} W</span></div>`;
+                        metrics += `<div class="metric"><span>Consumption</span><span class="value">${fmtVal(vals.consumption_w, 0)} W</span></div>`;
+                        metrics += `<div class="metric"><span>Net</span><span class="value">${fmtVal(vals.net_consumption_w, 0)} W</span></div>`;
+                        metrics += `<div class="metric"><span>Prod Today</span><span class="value">${fmtVal(vals.production_wh_today, 2)} kWh</span></div>`;
+                        metrics += `<div class="metric"><span>Cons Today</span><span class="value">${fmtVal(vals.consumption_wh_today, 2)} kWh</span></div>`;
                     }
                     if (source === 'Weather') {
                         metrics += `<div class="metric"><span>AQI</span><span class="value">${fmtVal(vals.iaq, 0)}</span></div>`;
@@ -606,6 +645,7 @@ def api_data():
     rows = query_range("readings")
     govee_rows = query_range("govee_readings")
     weather_rows = query_range("weather_readings")
+    solar_rows = query_range("solar_readings")
 
     # Pre-populate all known keys so cards always show
     all_rooms = conn.execute(
@@ -617,6 +657,9 @@ def api_data():
     has_weather = conn.execute(
         "SELECT 1 FROM weather_readings LIMIT 1"
     ).fetchone()
+    has_solar = conn.execute(
+        "SELECT 1 FROM solar_readings LIMIT 1"
+    ).fetchone()
 
     conn.close()
 
@@ -627,6 +670,8 @@ def api_data():
         result[row["room_name"] + "|Govee"] = []
     if has_weather:
         result["Outside|Weather"] = []
+    if has_solar:
+        result["Solar|Enphase"] = []
 
     for row in rows:
         key = row["room_name"] + "|Sensibo"
@@ -684,6 +729,23 @@ def api_data():
             }
         )
 
+    for row in solar_rows:
+        key = "Solar|Enphase"
+        if key not in result:
+            result[key] = []
+        prod_kwh = row["production_wh_today"]
+        cons_kwh = row["consumption_wh_today"]
+        result[key].append(
+            {
+                "timestamp": to_pacific(row["timestamp"]),
+                "production_w": row["production_w"],
+                "consumption_w": row["consumption_w"],
+                "net_consumption_w": row["net_consumption_w"],
+                "production_wh_today": round(prod_kwh / 1000, 2) if prod_kwh else None,
+                "consumption_wh_today": round(cons_kwh / 1000, 2) if cons_kwh else None,
+            }
+        )
+
     return result
 
 
@@ -691,12 +753,15 @@ def main():
     init_db()
     init_govee_db()
     init_weather_db()
+    init_solar_db()
     collector_thread = threading.Thread(target=run_collector, daemon=True)
     collector_thread.start()
     govee_thread = threading.Thread(target=run_govee_collector, daemon=True)
     govee_thread.start()
     weather_thread = threading.Thread(target=run_weather_collector, daemon=True)
     weather_thread.start()
+    solar_thread = threading.Thread(target=run_solar_collector, daemon=True)
+    solar_thread.start()
     print(f"\nDashboard running at http://localhost:{config.WEB_PORT}")
     app.run(host=config.WEB_HOST, port=config.WEB_PORT)
 
