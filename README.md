@@ -2,6 +2,8 @@
 
 A local home monitoring dashboard that collects and displays data from multiple sensor sources on a single web interface.
 
+![Dashboard Screenshot](screenshot.png)
+
 ## Features
 
 - **Sensibo** - Temperature, humidity, CO2, TVOC, and IAQ from Sensibo IR remotes (via REST API)
