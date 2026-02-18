@@ -144,6 +144,7 @@ HTML_TEMPLATE = """
     <div class="current-values" id="currentValues"></div>
 
     <div class="controls">
+        <button onclick="goToToday()">Today</button>
         <button onclick="setRange('1h')">1 Hour</button>
         <button onclick="setRange('6h')">6 Hours</button>
         <button onclick="setRange('24h')" class="active">24 Hours</button>
@@ -233,6 +234,16 @@ HTML_TEMPLATE = """
         let currentRange = '24h';
         let customStart = null;
         let customEnd = null;
+
+        function goToToday() {
+            let today = new Date();
+            let dateStr = today.getFullYear() + '-' +
+                String(today.getMonth() + 1).padStart(2, '0') + '-' +
+                String(today.getDate()).padStart(2, '0');
+            document.getElementById('datePicker').value = dateStr;
+            document.getElementById('dateSpan').value = '1';
+            goToDate();
+        }
 
         function setRange(range) {
             currentRange = range;
@@ -628,7 +639,7 @@ HTML_TEMPLATE = """
         }
 
         fetchAndPlot();
-        setInterval(fetchAndPlot, 60000);
+        setInterval(fetchAndPlot, 60000);  // refresh every 60s
     </script>
 </body>
 </html>
