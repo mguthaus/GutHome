@@ -210,8 +210,6 @@ HTML_TEMPLATE = """
             <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="production_w"> Production (W)</label>
             <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="consumption_w"> Consumption (W)</label>
             <label><input type="checkbox" onchange="fetchAndPlot()" data-field="net_consumption_w"> Net (W)</label>
-            <label><input type="checkbox" onchange="fetchAndPlot()" data-field="production_wh_today"> Prod Today (kWh)</label>
-            <label><input type="checkbox" onchange="fetchAndPlot()" data-field="consumption_wh_today"> Cons Today (kWh)</label>
         </div>
         <div class="chart" id="chart5" style="height:450px"></div>
     </div>
@@ -300,8 +298,7 @@ HTML_TEMPLATE = """
             production_w:    { label: 'Production', unit: 'W', color: '#fdcb6e' },
             consumption_w:   { label: 'Consumption', unit: 'W', color: '#e94560' },
             net_consumption_w: { label: 'Net', unit: 'W', color: '#00cec9' },
-            production_wh_today: { label: 'Prod Today', unit: 'kWh', color: '#fdcb6e' },
-            consumption_wh_today: { label: 'Cons Today', unit: 'kWh', color: '#e94560' }
+            production_wh_today: { label: 'Prod Today', unit: 'kWh', color: '#fdcb6e' }
         };
 
         function getCheckedFields(containerId) {
@@ -414,7 +411,10 @@ HTML_TEMPLATE = """
             }
             let traces = [];
             let keys = Object.keys(data);
-            let useSecondAxis = fields.length > 1;
+
+            // Group fields by unit for axis assignment
+            let units = [...new Set(fields.map(f => FIELD_CONFIG[f].unit))];
+            let useSecondAxis = units.length > 1;
 
             for (let key of keys) {
                 let { room, source } = parseKey(key);
@@ -423,33 +423,30 @@ HTML_TEMPLATE = """
                     let hasData = readings.some(r => r[field] != null);
                     if (!hasData) return;
                     let cfg = FIELD_CONFIG[field];
-                    let negFields = ['consumption_w', 'consumption_wh_today', 'net_consumption_w'];
+                    let negFields = ['consumption_w', 'net_consumption_w'];
                     let negate = negFields.includes(field);
+                    let fieldUnit = cfg.unit;
+                    let axisIdx = units.indexOf(fieldUnit);
                     traces.push({
                         x: readings.map(r => r.timestamp),
                         y: readings.map(r => r[field] != null ? (negate ? -r[field] : r[field]) : null),
                         name: cfg.label,
                         type: 'bar',
                         marker: { color: cfg.color, opacity: 0.7 },
-                        yaxis: (useSecondAxis && i > 0) ? 'y2' : 'y'
+                        yaxis: (useSecondAxis && axisIdx > 0) ? 'y2' : 'y'
                     });
                 });
             }
 
-            let firstCfg = FIELD_CONFIG[fields[0]];
-            let yTitle = firstCfg.label + (firstCfg.unit ? ' (' + firstCfg.unit + ')' : '');
+            let firstUnit = units[0];
             let layout = Object.assign({}, BASE_LAYOUT, {
                 barmode: 'group',
-                yaxis: { title: yTitle, gridcolor: '#2a2a4a', side: 'left' }
+                yaxis: { title: firstUnit, gridcolor: '#2a2a4a', side: 'left' }
             });
 
             if (useSecondAxis) {
-                let otherLabels = fields.slice(1).map(f => {
-                    let c = FIELD_CONFIG[f];
-                    return c.label + (c.unit ? ' (' + c.unit + ')' : '');
-                });
                 layout.yaxis2 = {
-                    title: otherLabels.join(' / '),
+                    title: units[1],
                     gridcolor: '#2a2a4a',
                     side: 'right',
                     overlaying: 'y'
@@ -596,6 +593,7 @@ HTML_TEMPLATE = """
                         metrics += `<div class="metric"><span>Net</span><span class="value">${fmtVal(vals.net_consumption_w, 0)} W</span></div>`;
                         metrics += `<div class="metric"><span>Prod Today</span><span class="value">${fmtVal(vals.production_wh_today, 2)} kWh</span></div>`;
                         metrics += `<div class="metric"><span>Cons Today</span><span class="value">${fmtVal(vals.consumption_wh_today, 2)} kWh</span></div>`;
+                        metrics += `<div class="metric"><span>Imported</span><span class="value">${fmtVal(vals.net_imported_kwh_today, 2)} kWh</span></div>`;
                     }
                     if (source === 'Weather') {
                         metrics += `<div class="metric"><span>AQI</span><span class="value">${fmtVal(vals.iaq, 0)}</span></div>`;
@@ -781,6 +779,14 @@ def api_data():
             result[key] = []
         prod_kwh = row["production_wh_today"]
         cons_kwh = row["consumption_wh_today"]
+
+        # Derive imported/exported from energy balance:
+        # consumed = produced + imported - exported
+        # net_imported = consumed - produced (= imported - exported)
+        net_imported_kwh = None
+        if cons_kwh and prod_kwh is not None:
+            net_imported_kwh = round((cons_kwh - prod_kwh) / 1000, 2)
+
         result[key].append(
             {
                 "timestamp": to_pacific(row["timestamp"]),
@@ -789,6 +795,7 @@ def api_data():
                 "net_consumption_w": row["net_consumption_w"],
                 "production_wh_today": round(prod_kwh / 1000, 2) if prod_kwh else None,
                 "consumption_wh_today": round(cons_kwh / 1000, 2) if cons_kwh else None,
+                "net_imported_kwh_today": net_imported_kwh,
             }
         )
 

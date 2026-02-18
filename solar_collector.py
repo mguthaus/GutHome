@@ -35,7 +35,7 @@ def init_solar_db():
 
 def collect_solar_once():
     resp = requests.get(
-        f"https://{config.ENPHASE_HOST}/production.json",
+        f"https://{config.ENPHASE_HOST}/production.json?details=1",
         headers={"Authorization": f"Bearer {config.ENPHASE_TOKEN}"},
         verify=False,
         timeout=10,
@@ -59,7 +59,12 @@ def collect_solar_once():
     for c in data.get("consumption", []):
         if c.get("measurementType") == "total-consumption":
             consumption = c["wNow"]
-            cons_today = c.get("whToday")
+            # Sum per-line whToday to avoid split-phase double-counting bug
+            lines = c.get("lines", [])
+            if lines:
+                cons_today = sum(line.get("whToday", 0) for line in lines)
+            else:
+                cons_today = c.get("whToday")
         elif c.get("measurementType") == "net-consumption":
             net = c["wNow"]
 
