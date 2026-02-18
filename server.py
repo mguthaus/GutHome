@@ -207,19 +207,13 @@ HTML_TEMPLATE = """
 
     <div class="chart-section">
         <div class="checkboxes" id="chart5Checks">
-            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="production_w"> Production</label>
-            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="consumption_w"> Consumption</label>
-            <label><input type="checkbox" onchange="fetchAndPlot()" data-field="net_consumption_w"> Net</label>
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="production_w"> Production (W)</label>
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="consumption_w"> Consumption (W)</label>
+            <label><input type="checkbox" onchange="fetchAndPlot()" data-field="net_consumption_w"> Net (W)</label>
+            <label><input type="checkbox" onchange="fetchAndPlot()" data-field="production_wh_today"> Prod Today (kWh)</label>
+            <label><input type="checkbox" onchange="fetchAndPlot()" data-field="consumption_wh_today"> Cons Today (kWh)</label>
         </div>
         <div class="chart" id="chart5" style="height:450px"></div>
-    </div>
-
-    <div class="chart-section">
-        <div class="checkboxes" id="chart6Checks">
-            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="production_wh_today"> Production Today</label>
-            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="consumption_wh_today"> Consumption Today</label>
-        </div>
-        <div class="chart" id="chart6" style="height:450px"></div>
     </div>
 
     <script>
@@ -334,7 +328,6 @@ HTML_TEMPLATE = """
                     plotGeneric('chart3', data, getCheckedFields('chart3Checks'));
                     plotGeneric('chart4', data, getCheckedFields('chart4Checks'));
                     plotGeneric('chart5', data, getCheckedFields('chart5Checks'));
-                    plotGeneric('chart6', data, getCheckedFields('chart6Checks'));
                     updateCurrentValues(data);
                 });
         }
