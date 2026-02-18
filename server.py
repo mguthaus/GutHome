@@ -327,7 +327,7 @@ HTML_TEMPLATE = """
                     plotGeneric('chart2', data, getCheckedFields('chart2Checks'));
                     plotGeneric('chart3', data, getCheckedFields('chart3Checks'));
                     plotGeneric('chart4', data, getCheckedFields('chart4Checks'));
-                    plotGeneric('chart5', data, getCheckedFields('chart5Checks'));
+                    plotBar('chart5', data, getCheckedFields('chart5Checks'));
                     updateCurrentValues(data);
                 });
         }
@@ -406,6 +406,59 @@ HTML_TEMPLATE = """
         }
 
         // Simple chart: checkboxes only specify field, all sources included
+        function plotBar(divId, data, checks) {
+            let fields = checks.map(c => c.field);
+            if (fields.length === 0) {
+                Plotly.newPlot(divId, [], BASE_LAYOUT, { responsive: true });
+                return;
+            }
+            let traces = [];
+            let keys = Object.keys(data);
+            let useSecondAxis = fields.length > 1;
+
+            for (let key of keys) {
+                let { room, source } = parseKey(key);
+                let readings = data[key];
+                fields.forEach((field, i) => {
+                    let hasData = readings.some(r => r[field] != null);
+                    if (!hasData) return;
+                    let cfg = FIELD_CONFIG[field];
+                    let negFields = ['consumption_w', 'consumption_wh_today', 'net_consumption_w'];
+                    let negate = negFields.includes(field);
+                    traces.push({
+                        x: readings.map(r => r.timestamp),
+                        y: readings.map(r => r[field] != null ? (negate ? -r[field] : r[field]) : null),
+                        name: cfg.label,
+                        type: 'bar',
+                        marker: { color: cfg.color, opacity: 0.7 },
+                        yaxis: (useSecondAxis && i > 0) ? 'y2' : 'y'
+                    });
+                });
+            }
+
+            let firstCfg = FIELD_CONFIG[fields[0]];
+            let yTitle = firstCfg.label + (firstCfg.unit ? ' (' + firstCfg.unit + ')' : '');
+            let layout = Object.assign({}, BASE_LAYOUT, {
+                barmode: 'group',
+                yaxis: { title: yTitle, gridcolor: '#2a2a4a', side: 'left' }
+            });
+
+            if (useSecondAxis) {
+                let otherLabels = fields.slice(1).map(f => {
+                    let c = FIELD_CONFIG[f];
+                    return c.label + (c.unit ? ' (' + c.unit + ')' : '');
+                });
+                layout.yaxis2 = {
+                    title: otherLabels.join(' / '),
+                    gridcolor: '#2a2a4a',
+                    side: 'right',
+                    overlaying: 'y'
+                };
+            }
+
+            Plotly.newPlot(divId, traces, layout, { responsive: true });
+        }
+
         function plotGeneric(divId, data, checks) {
             let fields = checks.map(c => c.field);
             if (fields.length === 0) {
