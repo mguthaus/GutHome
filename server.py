@@ -441,6 +441,8 @@ HTML_TEMPLATE = """
             let firstUnit = units[0];
             let layout = Object.assign({}, BASE_LAYOUT, {
                 barmode: 'group',
+                bargap: 0,
+                bargroupgap: 0,
                 yaxis: { title: firstUnit, gridcolor: '#2a2a4a', side: 'left' }
             });
 
