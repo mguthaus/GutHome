@@ -427,11 +427,20 @@ HTML_TEMPLATE = """
                     let negate = negFields.includes(field);
                     let fieldUnit = cfg.unit;
                     let axisIdx = units.indexOf(fieldUnit);
+                    // Calculate per-bar widths from consecutive timestamps (ms)
+                    let times = readings.map(r => new Date(r.timestamp).getTime());
+                    let widths = times.map((t, idx) => {
+                        if (idx < times.length - 1) return times[idx + 1] - t;
+                        if (idx > 0) return t - times[idx - 1];
+                        return 300 * 1000;  // default 5 min
+                    });
                     traces.push({
                         x: readings.map(r => r.timestamp),
                         y: readings.map(r => r[field] != null ? (negate ? -r[field] : r[field]) : null),
                         name: cfg.label,
                         type: 'bar',
+                        width: widths,
+                        offset: 0,
                         marker: { color: cfg.color, opacity: 0.7 },
                         yaxis: (useSecondAxis && axisIdx > 0) ? 'y2' : 'y'
                     });
@@ -440,9 +449,7 @@ HTML_TEMPLATE = """
 
             let firstUnit = units[0];
             let layout = Object.assign({}, BASE_LAYOUT, {
-                barmode: 'group',
-                bargap: 0,
-                bargroupgap: 0,
+                barmode: 'overlay',
                 yaxis: { title: firstUnit, gridcolor: '#2a2a4a', side: 'left' }
             });
 
