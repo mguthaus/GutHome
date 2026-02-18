@@ -43,7 +43,7 @@ def init_govee_db():
 
 async def scan_govee():
     """Scan for Govee H5074 devices and return decoded readings."""
-    devices = await BleakScanner.discover(timeout=60, return_adv=True)
+    devices = await BleakScanner.discover(timeout=config.GOVEE_SCAN_SECONDS, return_adv=True)
     readings = {}
     for addr, (device, adv) in devices.items():
         addr_upper = addr.upper()

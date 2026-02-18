@@ -13,6 +13,7 @@ ENPHASE_TOKEN = "your-jwt-token-here"  # Valid for 1 year for homeowners
 ENPHASE_POLL_INTERVAL_SECONDS = 300  # 5 minutes
 
 GOVEE_POLL_INTERVAL_SECONDS = 1800  # 30 minutes
+GOVEE_SCAN_SECONDS = 60  # BLE scan duration per poll
 
 # Map Govee H5074 MAC addresses to room names
 GOVEE_DEVICES = {
