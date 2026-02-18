@@ -4,9 +4,17 @@ DB_PATH = "sensibo_data.db"
 WEB_HOST = "0.0.0.0"
 WEB_PORT = 8080
 
+WU_STATION_ID = "KXXYYYYY123"  # Your Weather Underground station ID
+WU_POLL_INTERVAL_SECONDS = 300  # 5 minutes
+
+# Get token at https://enlighten.enphaseenergy.com/entrez-auth-token?serial_num=YOUR_SERIAL
+ENPHASE_HOST = "10.0.0.100"  # Your Envoy/IQ Gateway IP
+ENPHASE_TOKEN = "your-jwt-token-here"  # Valid for 1 year for homeowners
+ENPHASE_POLL_INTERVAL_SECONDS = 300  # 5 minutes
+
 GOVEE_POLL_INTERVAL_SECONDS = 1800  # 30 minutes
 
 # Map Govee H5074 MAC addresses to room names
 GOVEE_DEVICES = {
-    "A4:C1:38:00:00:00": "Room Name (Govee)",
+    "A4:C1:38:00:00:00": "Room Name",
 }
