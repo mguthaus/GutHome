@@ -22,26 +22,47 @@ def init_solar_db():
             net_consumption_w REAL,
             production_wh_today REAL,
             consumption_wh_today REAL,
-            production_wh_lifetime REAL
+            production_wh_lifetime REAL,
+            imported_wh_today REAL,
+            exported_wh_today REAL
         )
     """)
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_solar_timestamp
         ON solar_readings (timestamp)
     """)
+    # Add columns if upgrading from old schema
+    for col in ("imported_wh_today", "exported_wh_today"):
+        try:
+            conn.execute(f"ALTER TABLE solar_readings ADD COLUMN {col} REAL")
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.commit()
     conn.close()
 
 
+def _fetch_with_retries(max_retries=3, retry_delay=10):
+    """Fetch from Enphase gateway with retries on connection failure."""
+    for attempt in range(max_retries):
+        try:
+            resp = requests.get(
+                f"https://{config.ENPHASE_HOST}/production.json?details=1",
+                headers={"Authorization": f"Bearer {config.ENPHASE_TOKEN}"},
+                verify=False,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except (requests.ConnectionError, requests.Timeout) as e:
+            if attempt < max_retries - 1:
+                print(f"  Retry {attempt + 1}/{max_retries} after error: {e}")
+                time.sleep(retry_delay)
+            else:
+                raise
+
+
 def collect_solar_once():
-    resp = requests.get(
-        f"https://{config.ENPHASE_HOST}/production.json?details=1",
-        headers={"Authorization": f"Bearer {config.ENPHASE_TOKEN}"},
-        verify=False,
-        timeout=10,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+    data = _fetch_with_retries()
 
     production = None
     consumption = None
