@@ -12,6 +12,7 @@ ENPHASE_HOST = "10.0.0.100"  # Your Envoy/IQ Gateway IP
 ENPHASE_TOKEN = "your-jwt-token-here"  # Valid for 1 year for homeowners
 ENPHASE_POLL_INTERVAL_SECONDS = 300  # 5 minutes
 
+GOVEE_ENABLED = False  # Set True to enable Govee BLE sensors
 GOVEE_POLL_INTERVAL_SECONDS = 1800  # 30 minutes
 GOVEE_SCAN_SECONDS = 60  # BLE scan duration per poll
 

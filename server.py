@@ -3,7 +3,8 @@ import threading
 from flask import Flask, render_template_string
 import config
 from collector import init_db, run_collector
-from govee_collector import init_govee_db, run_govee_collector
+if getattr(config, "GOVEE_ENABLED", False):
+    from govee_collector import init_govee_db, run_govee_collector
 from weather_collector import init_weather_db, run_weather_collector
 from solar_collector import init_solar_db, run_solar_collector
 
@@ -201,16 +202,18 @@ HTML_TEMPLATE = """
         <div class="checkboxes" id="chart4Checks">
             <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="pressure"> Pressure</label>
             <label><input type="checkbox" onchange="fetchAndPlot()" data-field="uv"> UV Index</label>
-            <label><input type="checkbox" onchange="fetchAndPlot()" data-field="solar_radiation"> Solar Radiation</label>
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="solar_radiation"> Solar Radiation</label>
         </div>
         <div class="chart" id="chart4" style="height:450px"></div>
     </div>
 
     <div class="chart-section">
         <div class="checkboxes" id="chart5Checks">
-            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="production_w"> Production (W)</label>
-            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="consumption_w"> Consumption (W)</label>
-            <label><input type="checkbox" onchange="fetchAndPlot()" data-field="net_consumption_w"> Net (W)</label>
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="production_w"> Production (kW)</label>
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="consumption_w"> Consumption (kW)</label>
+            <label><input type="checkbox" onchange="fetchAndPlot()" data-field="net_consumption_w"> Net (kW)</label>
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="production_wh_today"> Produced (kWh)</label>
+            <label><input type="checkbox" checked onchange="fetchAndPlot()" data-field="consumption_wh_today"> Consumed (kWh)</label>
         </div>
         <div class="chart" id="chart5" style="height:450px"></div>
     </div>
@@ -306,10 +309,11 @@ HTML_TEMPLATE = """
             pressure:    { label: 'Pressure', unit: 'inHg', color: '#a29bfe' },
             uv:          { label: 'UV Index', unit: '', color: '#fdcb6e' },
             solar_radiation: { label: 'Solar', unit: 'W/m²', color: '#e17055' },
-            production_w:    { label: 'Production', unit: 'W', color: '#fdcb6e' },
-            consumption_w:   { label: 'Consumption', unit: 'W', color: '#e94560' },
-            net_consumption_w: { label: 'Net', unit: 'W', color: '#00cec9' },
-            production_wh_today: { label: 'Prod Today', unit: 'kWh', color: '#fdcb6e' }
+            production_w:    { label: 'Production', unit: 'kW', color: '#f9ca24' },
+            consumption_w:   { label: 'Consumption', unit: 'kW', color: '#eb4d4b' },
+            net_consumption_w: { label: 'Net', unit: 'kW', color: '#888888' },
+            production_wh_today: { label: 'Produced', unit: 'kWh', color: '#f9ca24' },
+            consumption_wh_today: { label: 'Consumed', unit: 'kWh', color: '#eb4d4b' }
         };
 
         function getCheckedFields(containerId) {
@@ -335,7 +339,7 @@ HTML_TEMPLATE = """
                     plotGeneric('chart2', data, getCheckedFields('chart2Checks'));
                     plotGeneric('chart3', data, getCheckedFields('chart3Checks'));
                     plotGeneric('chart4', data, getCheckedFields('chart4Checks'));
-                    plotBar('chart5', data, getCheckedFields('chart5Checks'));
+                    plotSolar('chart5', data, getCheckedFields('chart5Checks'));
                     updateCurrentValues(data);
                 });
         }
@@ -476,6 +480,80 @@ HTML_TEMPLATE = """
             Plotly.newPlot(divId, traces, layout, { responsive: true });
         }
 
+        function plotSolar(divId, data, checks) {
+            let fields = checks.map(c => c.field);
+            if (fields.length === 0) {
+                Plotly.newPlot(divId, [], BASE_LAYOUT, { responsive: true });
+                return;
+            }
+            let traces = [];
+            let keys = Object.keys(data);
+            let negFields = ['consumption_w', 'net_consumption_w', 'consumption_wh_today'];
+            let lineFields = ['production_w', 'consumption_w', 'net_consumption_w'];
+            let hasW = fields.some(f => FIELD_CONFIG[f].unit === 'kW');
+            let hasKwh = fields.some(f => FIELD_CONFIG[f].unit === 'kWh');
+
+            for (let key of keys) {
+                let { room, source } = parseKey(key);
+                let readings = data[key];
+
+                // Calculate bar widths from timestamps
+                let times = readings.map(r => new Date(r.timestamp).getTime());
+                let widths = times.map((t, idx) => {
+                    if (idx < times.length - 1) return times[idx + 1] - t;
+                    if (idx > 0) return t - times[idx - 1];
+                    return 300 * 1000;
+                });
+
+                fields.forEach((field) => {
+                    let hasData = readings.some(r => r[field] != null);
+                    if (!hasData) return;
+                    let cfg = FIELD_CONFIG[field];
+                    let negate = negFields.includes(field);
+                    let isLine = lineFields.includes(field);
+                    let isW = cfg.unit === 'W';
+
+                    if (isLine) {
+                        traces.push({
+                            x: readings.map(r => r.timestamp),
+                            y: readings.map(r => r[field] != null ? (negate ? -r[field] : r[field]) : null),
+                            name: cfg.label,
+                            type: 'scatter',
+                            mode: 'lines',
+                            line: { color: cfg.color, width: 2 },
+                            yaxis: 'y'
+                        });
+                    } else {
+                        traces.push({
+                            x: readings.map(r => r.timestamp),
+                            y: readings.map(r => r[field] != null ? (negate ? -r[field] : r[field]) : null),
+                            name: cfg.label,
+                            type: 'bar',
+                            width: widths,
+                            offset: 0,
+                            marker: { color: cfg.color, opacity: 0.7 },
+                            yaxis: hasW ? 'y2' : 'y'
+                        });
+                    }
+                });
+            }
+
+            let layout = Object.assign({}, BASE_LAYOUT, {
+                barmode: 'overlay',
+            });
+
+            if (hasW && hasKwh) {
+                layout.yaxis = { title: 'kW', gridcolor: '#2a2a4a', side: 'left' };
+                layout.yaxis2 = { title: 'kWh', gridcolor: '#2a2a4a', side: 'right', overlaying: 'y' };
+            } else if (hasW) {
+                layout.yaxis = { title: 'kW', gridcolor: '#2a2a4a' };
+            } else {
+                layout.yaxis = { title: 'kWh', gridcolor: '#2a2a4a' };
+            }
+
+            Plotly.newPlot(divId, traces, layout, { responsive: true });
+        }
+
         function plotGeneric(divId, data, checks) {
             let fields = checks.map(c => c.field);
             if (fields.length === 0) {
@@ -608,12 +686,11 @@ HTML_TEMPLATE = """
                         metrics += `<div class="metric"><span>AQI/IAQ</span><span class="value">${fmtVal(vals.iaq, 0)}</span></div>`;
                     }
                     if (source === 'Enphase') {
-                        metrics += `<div class="metric"><span>Production</span><span class="value">${fmtVal(vals.production_w, 0)} W</span></div>`;
-                        metrics += `<div class="metric"><span>Consumption</span><span class="value">${fmtVal(vals.consumption_w, 0)} W</span></div>`;
-                        metrics += `<div class="metric"><span>Net</span><span class="value">${fmtVal(vals.net_consumption_w, 0)} W</span></div>`;
+                        metrics += `<div class="metric"><span>Production</span><span class="value">${fmtVal(vals.production_w, 2)} kW</span></div>`;
+                        metrics += `<div class="metric"><span>Consumption</span><span class="value">${fmtVal(vals.consumption_w, 2)} kW</span></div>`;
+                        metrics += `<div class="metric"><span>Net</span><span class="value">${fmtVal(vals.net_consumption_w, 2)} kW</span></div>`;
                         metrics += `<div class="metric"><span>Prod Today</span><span class="value">${fmtVal(vals.production_wh_today, 2)} kWh</span></div>`;
                         metrics += `<div class="metric"><span>Cons Today</span><span class="value">${fmtVal(vals.consumption_wh_today, 2)} kWh</span></div>`;
-                        metrics += `<div class="metric"><span>Imported</span><span class="value">${fmtVal(vals.net_imported_kwh_today, 2)} kWh</span></div>`;
                     }
                     if (source === 'Weather') {
                         metrics += `<div class="metric"><span>AQI</span><span class="value">${fmtVal(vals.iaq, 0)}</span></div>`;
@@ -707,7 +784,7 @@ def api_data():
             ).fetchall()
 
     rows = query_range("readings")
-    govee_rows = query_range("govee_readings")
+    govee_rows = query_range("govee_readings") if getattr(config, "GOVEE_ENABLED", False) else []
     weather_rows = query_range("weather_readings")
     solar_rows = query_range("solar_readings")
 
@@ -717,7 +794,7 @@ def api_data():
     ).fetchall()
     all_govee_rooms = conn.execute(
         "SELECT DISTINCT room_name FROM govee_readings"
-    ).fetchall()
+    ).fetchall() if getattr(config, "GOVEE_ENABLED", False) else []
     has_weather = conn.execute(
         "SELECT 1 FROM weather_readings LIMIT 1"
     ).fetchone()
@@ -800,22 +877,14 @@ def api_data():
         prod_kwh = row["production_wh_today"]
         cons_kwh = row["consumption_wh_today"]
 
-        # Derive imported/exported from energy balance:
-        # consumed = produced + imported - exported
-        # net_imported = consumed - produced (= imported - exported)
-        net_imported_kwh = None
-        if cons_kwh and prod_kwh is not None:
-            net_imported_kwh = round((cons_kwh - prod_kwh) / 1000, 2)
-
         result[key].append(
             {
                 "timestamp": to_pacific(row["timestamp"]),
-                "production_w": row["production_w"],
-                "consumption_w": row["consumption_w"],
-                "net_consumption_w": row["net_consumption_w"],
+                "production_w": round(row["production_w"] / 1000, 2) if row["production_w"] else None,
+                "consumption_w": round(row["consumption_w"] / 1000, 2) if row["consumption_w"] else None,
+                "net_consumption_w": round(row["net_consumption_w"] / 1000, 2) if row["net_consumption_w"] else None,
                 "production_wh_today": round(prod_kwh / 1000, 2) if prod_kwh else None,
                 "consumption_wh_today": round(cons_kwh / 1000, 2) if cons_kwh else None,
-                "net_imported_kwh_today": net_imported_kwh,
             }
         )
 
@@ -824,13 +893,14 @@ def api_data():
 
 def main():
     init_db()
-    init_govee_db()
+    if getattr(config, "GOVEE_ENABLED", False):
+        init_govee_db()
+        govee_thread = threading.Thread(target=run_govee_collector, daemon=True)
+        govee_thread.start()
     init_weather_db()
     init_solar_db()
     collector_thread = threading.Thread(target=run_collector, daemon=True)
     collector_thread.start()
-    govee_thread = threading.Thread(target=run_govee_collector, daemon=True)
-    govee_thread.start()
     weather_thread = threading.Thread(target=run_weather_collector, daemon=True)
     weather_thread.start()
     solar_thread = threading.Thread(target=run_solar_collector, daemon=True)
